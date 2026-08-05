@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kollywood Duel — Guess the Higher IMDb Rating</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0a08;
+            --surface: #16130f;
+            --surface-2: #1e1a14;
+            --gold: #c9a45c;
+            --gold-bright: #e6c780;
+            --cream: #f2ead9;
+            --cream-dim: #a89e8c;
+            --red: #a3323b;
+            --green: #6b8f71;
+            --perf: #0b0a08;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--cream);
+            font-family: 'Work Sans', sans-serif;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image:
+                radial-gradient(circle at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.55) 100%),
+                repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px);
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .scoreboard {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 18px 26px;
+            z-index: 30;
+            pointer-events: none;
+        }
+
+        .score-pill {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            background: rgba(11, 10, 8, 0.55);
+            border: 1px solid rgba(201, 164, 92, 0.35);
+            color: var(--gold-bright);
+            padding: 8px 14px;
+            border-radius: 3px;
+            backdrop-filter: blur(4px);
+        }
+
+        .score-pill span {
+            color: var(--cream);
+            font-weight: 700;
+            margin-left: 6px;
+        }
+
+        .arena {
+            position: relative;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+        }
+
+        .movie-card {
+            position: relative;
+            flex: 1;
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            cursor: pointer;
+            overflow: hidden;
+            transition: flex 0.55s cubic-bezier(.6, 0, .3, 1), filter 0.45s ease;
+        }
+
+        .movie-card:hover .poster {
+            transform: scale(1.03);
+        }
+
+        .movie-card.locked {
+            cursor: default;
+        }
+
+        .movie-card.loser {
+            filter: grayscale(0.7) brightness(0.4);
+            flex: 0.82;
+        }
+
+        .movie-card.winner {
+            flex: 1.18;
+        }
+
+        .poster {
+            position: absolute;
+            inset: 0;
+            transition: transform 0.6s ease, opacity .5s ease;
+        }
+
+        .poster.enter {
+            animation: slideIn 0.5s cubic-bezier(.2, .8, .2, 1);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: scale(1.08);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .poster::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            background: linear-gradient(to top, rgba(11, 10, 8, 0.92) 0%, rgba(11, 10, 8, 0.35) 42%, rgba(11, 10, 8, 0.05) 65%);
+        }
+
+        .poster-img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .poster-img.loaded {
+            opacity: 1;
+        }
+
+        .film-icon {
+            position: absolute;
+            z-index: 0;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -58%);
+            font-size: 90px;
+            opacity: 0.16;
+            filter: grayscale(1) brightness(2);
+        }
+
+        .card-content {
+            position: relative;
+            z-index: 2;
+            padding: 46px 28px 40px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .movie-title {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            font-size: clamp(20px, 2.1vw, 30px);
+            line-height: 1.15;
+            text-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+        }
+
+        .movie-year {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--gold);
+            letter-spacing: 2px;
+            margin-top: 6px;
+        }
+
+        .rating-stamp {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 10px 22px;
+            border: 2px solid var(--gold);
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            background: rgba(11, 10, 8, 0.55);
+            opacity: 0;
+            transform: scale(0.6) translateY(0) rotate(-6deg);
+            transition: opacity 0.3s ease, transform 0.35s cubic-bezier(.3, 1.6, .5, 1);
+        }
+
+        .rating-stamp.show {
+            opacity: 1;
+            transform: scale(1) translateY(-26px) rotate(-3deg);
+        }
+
+        .rating-stamp .num {
+            font-size: 40px;
+            color: var(--gold-bright);
+        }
+
+        .rating-stamp .imdb {
+            font-size: 12px;
+            color: var(--cream-dim);
+            letter-spacing: 1px;
+        }
+
+        .movie-card.winner .rating-stamp {
+            border-color: var(--green);
+        }
+
+        .movie-card.winner .rating-stamp .num {
+            color: #9fd1a6;
+        }
+
+        .movie-card.loser .rating-stamp {
+            border-color: var(--red);
+        }
+
+        .movie-card.loser .rating-stamp .num {
+            color: #d98a90;
+        }
+
+        .prompt {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 2.5px;
+            color: var(--cream-dim);
+            text-transform: uppercase;
+            opacity: 0.75;
+            z-index: 2;
+            transition: opacity 0.3s ease;
+        }
+
+        .movie-card:not(.locked):hover .prompt {
+            color: var(--gold-bright);
+            opacity: 1;
+        }
+
+        /* Perforated ticket divider */
+        .divider {
+            position: relative;
+            width: 74px;
+            flex-shrink: 0;
+            height: 100%;
+            background: var(--perf);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            width: 14px;
+            height: 14px;
+            background: var(--bg);
+            border-radius: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 0 2px rgba(201, 164, 92, 0.25);
+        }
+
+        .divider::before {
+            top: -7px;
+        }
+
+        .divider::after {
+            bottom: -7px;
+        }
+
+        .perf-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            border-left: 3px dashed rgba(201, 164, 92, 0.3);
+        }
+
+        .vs-badge {
+            position: relative;
+            z-index: 2;
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #26201a, #0b0a08 75%);
+            border: 2px solid var(--gold);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Playfair Display', serif;
+            font-weight: 900;
+            font-size: 16px;
+            color: var(--gold-bright);
+            letter-spacing: 1px;
+            box-shadow: 0 0 0 6px var(--bg), 0 4px 18px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Game over overlay */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(6, 5, 4, 0.88);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        .overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .overlay-card {
+            text-align: center;
+            max-width: 420px;
+            padding: 0 24px;
+            transform: translateY(14px);
+            opacity: 0;
+            transition: transform 0.5s ease 0.1s, opacity 0.5s ease 0.1s;
+        }
+
+        .overlay.show .overlay-card {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .overlay-eyebrow {
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 4px;
+            font-size: 11px;
+            color: var(--red);
+            text-transform: uppercase;
+        }
+
+        .overlay-title {
+            font-family: 'Playfair Display', serif;
+            font-weight: 900;
+            font-size: 46px;
+            margin: 10px 0 4px;
+            color: var(--cream);
+        }
+
+        .overlay-sub {
+            color: var(--cream-dim);
+            font-size: 15px;
+            margin-bottom: 26px;
+        }
+
+        .overlay-stats {
+            display: flex;
+            justify-content: center;
+            gap: 36px;
+            margin-bottom: 30px;
+        }
+
+        .stat-block .stat-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 30px;
+            font-weight: 700;
+            color: var(--gold-bright);
+        }
+
+        .stat-block .stat-label {
+            font-size: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--cream-dim);
+            margin-top: 4px;
+        }
+
+        .new-high {
+            color: var(--green) !important;
+        }
+
+        .replay-btn {
+            font-family: 'Work Sans', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            background: var(--gold);
+            color: #0b0a08;
+            border: none;
+            padding: 14px 34px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.15s ease;
+        }
+
+        .replay-btn:hover {
+            background: var(--gold-bright);
+            transform: translateY(-1px);
+        }
+
+        .replay-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Intro overlay */
+        .intro .overlay-title {
+            font-size: 40px;
+        }
+
+        .intro-rules {
+            text-align: left;
+            font-size: 13.5px;
+            color: var(--cream-dim);
+            line-height: 1.7;
+            margin: 0 auto 28px;
+            max-width: 340px;
+        }
+
+        .intro-rules b {
+            color: var(--gold-bright);
+            font-weight: 600;
+        }
+
+        @media (max-width: 720px) {
+            .arena {
+                flex-direction: column;
+            }
+
+            .divider {
+                width: 100%;
+                height: 64px;
+                flex-shrink: 0;
+            }
+
+            .divider::before {
+                left: -7px;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+
+            .divider::after {
+                left: auto;
+                right: -7px;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+
+            .perf-line {
+                left: 0;
+                right: 0;
+                top: 50%;
+                width: auto;
+                height: 0;
+                border-left: none;
+                border-top: 3px dashed rgba(201, 164, 92, 0.3);
+            }
+
+            .movie-title {
+                font-size: 19px;
+            }
+
+            .card-content {
+                padding: 26px 20px 26px;
+            }
+
+            .rating-stamp .num {
+                font-size: 30px;
+            }
+
+            .rating-stamp.show {
+                transform: scale(1) translateY(-14px) rotate(-3deg);
+            }
+
+            .overlay-title {
+                font-size: 34px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="scoreboard">
+        <div class="score-pill">High Score <span id="highScoreVal">0</span></div>
+        <div class="score-pill">Score <span id="scoreVal">0</span></div>
+    </div>
+
+    <div class="arena" id="arena">
+        <div class="movie-card" id="cardLeft" data-side="left">
+            <div class="poster" id="posterLeft">
+                <div class="film-icon">🎬</div>
+            </div>
+            <div class="card-content">
+                <div class="movie-title" id="titleLeft">—</div>
+                <div class="movie-year" id="yearLeft">—</div>
+                <div class="rating-stamp" id="stampLeft"><span class="num">–.–</span><span class="imdb">TMDb</span>
+                </div>
+            </div>
+            <div class="prompt">Higher rated?</div>
+        </div>
+
+        <div class="divider">
+            <div class="perf-line"></div>
+            <div class="vs-badge">OR</div>
+        </div>
+
+        <div class="movie-card" id="cardRight" data-side="right">
+            <div class="poster" id="posterRight">
+                <div class="film-icon">🎬</div>
+            </div>
+            <div class="card-content">
+                <div class="movie-title" id="titleRight">—</div>
+                <div class="movie-year" id="yearRight">—</div>
+                <div class="rating-stamp" id="stampRight"><span class="num">–.–</span><span class="imdb">TMDb</span>
+                </div>
+            </div>
+            <div class="prompt">Higher rated?</div>
+        </div>
+    </div>
+
+    <div class="overlay intro show" id="introOverlay">
+        <div class="overlay-card">
+            <div class="overlay-eyebrow">Kollywood Duel</div>
+            <div class="overlay-title">Higher or Lower?</div>
+            <div class="intro-rules">
+                Two Tamil movies, side by side, pulled live from TMDb. <b>Pick the one with the higher
+                    rating.</b><br><br>
+                Guess right and both sides refresh with new challengers. One wrong guess ends the run —
+                <b>how long can your streak last?</b>
+            </div>
+            <div class="intro-rules" id="loadStatus" style="display:none; text-align:center; color:var(--gold);"></div>
+            <button class="replay-btn" id="startBtn" disabled style="opacity:0.4; cursor:not-allowed;">Start
+                Duel</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="endOverlay">
+        <div class="overlay-card">
+            <div class="overlay-eyebrow">Run Over</div>
+            <div class="overlay-title">Nice Try</div>
+            <div class="overlay-sub" id="endSub">Let's see how you stacked up.</div>
+            <div class="overlay-stats">
+                <div class="stat-block">
+                    <div class="stat-num" id="finalScore">0</div>
+                    <div class="stat-label">Final Score</div>
+                </div>
+                <div class="stat-block">
+                    <div class="stat-num" id="finalHigh">0</div>
+                    <div class="stat-label">High Score</div>
+                </div>
+            </div>
+            <button class="replay-btn" id="replayBtn">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            // ---- TMDb config ----
+            // Get a free API key at https://www.themoviedb.org/settings/api (Developer key)
+            // This is the ONLY line in this whole file you need to edit.
+            // Replace the text inside the quotes with your key. Nothing else needs to change.
+            const TMDB_API_KEY = 'c33499a1595451d614e71b54df54bc8a';
+            const TMDB_IMG_BASE = 'https://image.tmdb.org/t/p/w500';
+            const MIN_VOTE_COUNT = 25;   // skip near-unrated/obscure titles
+            const PAGES_TO_FETCH = 15;   // ~20 results per page
+
+            // A real TMDb v3 key is always a 32-character code (letters a-f, numbers 0-9).
+            // Checking the shape of the key means there's nothing else in this file to edit or break.
+            function hasTmdbKey() {
+                return /^[a-f0-9]{32}$/i.test(TMDB_API_KEY.trim());
+            }
+
+            // Strict Tamil-only pull: filtered server-side by original_language=ta,
+            // then double-checked client-side so nothing else can slip through.
+            async function fetchTamilMoviePool() {
+                if (!hasTmdbKey()) {
+                    throw new Error('NO_KEY');
+                }
+                const requests = [];
+                for (let p = 1; p <= PAGES_TO_FETCH; p++) {
+                    const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}`
+                        + `&with_original_language=ta&sort_by=vote_count.desc`
+                        + `&vote_count.gte=${MIN_VOTE_COUNT}&page=${p}`;
+                    requests.push(fetch(url).then(r => {
+                        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                        return r.json();
+                    }));
+                }
+                const settled = await Promise.allSettled(requests);
+                const errors = settled.filter(s => s.status === 'rejected');
+                if (errors.length === settled.length) {
+                    // every page failed — surface the first error (likely a bad key)
+                    throw errors[0].reason;
+                }
+
+                const byId = new Map();
+                settled.forEach(s => {
+                    if (s.status !== 'fulfilled') return;
+                    const results = (s.value && s.value.results) || [];
+                    results.forEach(m => {
+                        if (m.original_language !== 'ta') return;      // strict Tamil-only guard
+                        if (!m.poster_path) return;                     // must have real art
+                        if (!m.release_date) return;
+                        if (typeof m.vote_average !== 'number' || m.vote_average <= 0) return;
+                        byId.set(m.id, {
+                            id: m.id,
+                            title: m.title,
+                            year: m.release_date.slice(0, 4),
+                            rating: m.vote_average,
+                            poster: TMDB_IMG_BASE + m.poster_path
+                        });
+                    });
+                });
+                return Array.from(byId.values());
+            }
+
+            const GRADIENTS = [
+                ["#3a2c1f", "#0b0a08"], ["#2c1a1e", "#0b0a08"], ["#1a2626", "#0b0a08"],
+                ["#2a2418", "#0b0a08"], ["#241a2a", "#0b0a08"], ["#1e2a1e", "#0b0a08"],
+                ["#301f1f", "#0b0a08"], ["#1f2530", "#0b0a08"]
+            ];
+            function gradientFor(id) {
+                const g = GRADIENTS[id % GRADIENTS.length];
+                const angle = 25 + (id * 37) % 140;
+                return `linear-gradient(${angle}deg, ${g[0]}, ${g[1]})`;
+            }
+
+            const els = {
+                arena: document.getElementById('arena'),
+                cardLeft: document.getElementById('cardLeft'),
+                cardRight: document.getElementById('cardRight'),
+                posterLeft: document.getElementById('posterLeft'),
+                posterRight: document.getElementById('posterRight'),
+                titleLeft: document.getElementById('titleLeft'),
+                titleRight: document.getElementById('titleRight'),
+                yearLeft: document.getElementById('yearLeft'),
+                yearRight: document.getElementById('yearRight'),
+                stampLeft: document.getElementById('stampLeft'),
+                stampRight: document.getElementById('stampRight'),
+                scoreVal: document.getElementById('scoreVal'),
+                highScoreVal: document.getElementById('highScoreVal'),
+                endOverlay: document.getElementById('endOverlay'),
+                introOverlay: document.getElementById('introOverlay'),
+                finalScore: document.getElementById('finalScore'),
+                finalHigh: document.getElementById('finalHigh'),
+                endSub: document.getElementById('endSub'),
+                startBtn: document.getElementById('startBtn'),
+                replayBtn: document.getElementById('replayBtn'),
+                loadStatus: document.getElementById('loadStatus'),
+            };
+
+            const STORAGE_KEY = 'kollywoodDuelHighScore';
+            let highScore = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+            let score = 0;
+            let MOVIES = [];
+            let left, right, pool, locked = true; // locked until the pool loads
+            let winStreakMovieId = null;
+            let winStreakCount = 0;
+
+            els.highScoreVal.textContent = highScore;
+
+            function shuffledPool() {
+                const arr = MOVIES.slice();
+                for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                return arr;
+            }
+
+            function nextMovie(exclude) {
+                if (pool.length === 0) pool = shuffledPool();
+                let idx = pool.findIndex(m => !exclude.includes(m.id));
+                if (idx === -1) {
+                    pool = shuffledPool();
+                    idx = pool.findIndex(m => !exclude.includes(m.id));
+                    if (idx === -1) idx = 0;
+                }
+                const m = pool[idx];
+                pool.splice(idx, 1);
+                return m;
+            }
+
+            function paint(side, movie, animate) {
+                const posterEl = side === 'left' ? els.posterLeft : els.posterRight;
+                const titleEl = side === 'left' ? els.titleLeft : els.titleRight;
+                const yearEl = side === 'left' ? els.yearLeft : els.yearRight;
+                const stampEl = side === 'left' ? els.stampLeft : els.stampRight;
+
+                posterEl.style.background = gradientFor(movie.id); // fallback while the real poster loads
+                posterEl.classList.remove('enter');
+                if (animate) { void posterEl.offsetWidth; posterEl.classList.add('enter'); }
+                titleEl.textContent = movie.title;
+                yearEl.textContent = movie.year;
+                stampEl.classList.remove('show');
+                stampEl.querySelector('.num').textContent = movie.rating.toFixed(1);
+
+                let img = posterEl.querySelector('.poster-img');
+                if (!img) {
+                    img = document.createElement('img');
+                    img.className = 'poster-img';
+                    img.alt = '';
+                    posterEl.insertBefore(img, posterEl.firstChild);
+                }
+                img.classList.remove('loaded');
+                posterEl.dataset.movieId = movie.id;
+                img.onload = () => {
+                    if (String(posterEl.dataset.movieId) !== String(movie.id)) return; // card moved on already
+                    img.classList.add('loaded');
+                };
+                img.src = movie.poster;
+            }
+
+            function resetCardState() {
+                els.cardLeft.classList.remove('winner', 'loser', 'locked');
+                els.cardRight.classList.remove('winner', 'loser', 'locked');
+            }
+
+            function startRound() {
+                resetCardState();
+                pool = shuffledPool();
+                left = nextMovie([]);
+                right = nextMovie([left.id]);
+                paint('left', left, false);
+                paint('right', right, false);
+                locked = false;
+            }
+
+            function updateScoreUI() {
+                els.scoreVal.textContent = score;
+                els.highScoreVal.textContent = highScore;
+            }
+
+            function handlePick(side) {
+                if (locked) return;
+                locked = true;
+                els.cardLeft.classList.add('locked');
+                els.cardRight.classList.add('locked');
+
+                const picked = side === 'left' ? left : right;
+                const other = side === 'left' ? right : left;
+                const correct = picked.rating >= other.rating; // tie counts as correct
+
+                els.stampLeft.classList.add('show');
+                els.stampRight.classList.add('show');
+
+                if (correct) {
+                    score++;
+                    if (score > highScore) {
+                        highScore = score;
+                        localStorage.setItem(STORAGE_KEY, String(highScore));
+                    }
+                    updateScoreUI();
+
+                    const winnerCard = side === 'left' ? els.cardLeft : els.cardRight;
+                    const loserCard = side === 'left' ? els.cardRight : els.cardLeft;
+                    winnerCard.classList.add('winner');
+                    loserCard.classList.add('loser');
+
+                    setTimeout(() => {
+                        // Track how many rounds in a row this same movie has won.
+                        if (winStreakMovieId === picked.id) {
+                            winStreakCount++;
+                        } else {
+                            winStreakMovieId = picked.id;
+                            winStreakCount = 1;
+                        }
+
+                        if (winStreakCount >= 2) {
+                            // Won twice in a row — retire it, refresh BOTH sides.
+                            const excludeIds = [left.id, right.id];
+                            const newLeft = nextMovie(excludeIds);
+                            const newRight = nextMovie(excludeIds.concat([newLeft.id]));
+                            left = newLeft;
+                            right = newRight;
+                            paint('left', left, true);
+                            paint('right', right, true);
+                            winStreakMovieId = null;
+                            winStreakCount = 0;
+                        } else {
+                            // First win for this movie — keep it on screen, swap only the loser.
+                            const freshMovie = nextMovie([left.id, right.id]);
+                            if (side === 'left') {
+                                right = freshMovie;
+                                paint('right', right, true);
+                            } else {
+                                left = freshMovie;
+                                paint('left', left, true);
+                            }
+                        }
+                        resetCardState();
+                        locked = false;
+                    }, 1100);
+                } else {
+                    const winnerCard = side === 'left' ? els.cardRight : els.cardLeft;
+                    const loserCard = side === 'left' ? els.cardLeft : els.cardRight;
+                    winnerCard.classList.add('winner');
+                    loserCard.classList.add('loser');
+                    setTimeout(showGameOver, 1000);
+                }
+            }
+
+            function showGameOver() {
+                els.finalScore.textContent = score;
+                els.finalHigh.textContent = highScore;
+                els.endSub.textContent = score >= highScore && score > 0
+                    ? 'New high score — take a bow.'
+                    : "Let's see how you stacked up.";
+                els.endOverlay.classList.add('show');
+            }
+
+            function newGame() {
+                score = 0;
+                winStreakMovieId = null;
+                winStreakCount = 0;
+                updateScoreUI();
+                els.endOverlay.classList.remove('show');
+                els.introOverlay.classList.remove('show');
+                startRound();
+            }
+
+            els.cardLeft.addEventListener('click', () => handlePick('left'));
+            els.cardRight.addEventListener('click', () => handlePick('right'));
+            els.startBtn.addEventListener('click', newGame);
+            els.replayBtn.addEventListener('click', newGame);
+
+            function enableStart() {
+                els.startBtn.disabled = false;
+                els.startBtn.style.opacity = '1';
+                els.startBtn.style.cursor = 'pointer';
+            }
+
+            // Load the live Tamil movie pool, then unlock the Start button.
+            fetchTamilMoviePool()
+                .then(list => {
+                    if (list.length < 10) {
+                        throw new Error('TOO_FEW_RESULTS');
+                    }
+                    MOVIES = list;
+                    pool = shuffledPool();
+                    left = nextMovie([]);
+                    right = nextMovie([left.id]);
+                    paint('left', left, false);
+                    paint('right', right, false);
+                    enableStart();
+                })
+                .catch(err => {
+                    console.error('[Kollywood Duel] Failed to load movie pool:', err);
+                    let msg = 'Could not load movies. Check the console for details.';
+                    if (err && err.message === 'NO_KEY') {
+                        msg = 'No TMDb API key set — paste your key into TMDB_API_KEY in the file.';
+                    } else if (err && err.message === 'TOO_FEW_RESULTS') {
+                        msg = 'TMDb returned too few Tamil titles — try again in a moment.';
+                    } else if (err && /HTTP 401/.test(err.message)) {
+                        msg = 'TMDb rejected the API key (401). Double-check you copied the v3 key correctly.';
+                    }
+                    els.loadStatus.textContent = msg;
+                    els.loadStatus.style.color = 'var(--red)';
+                    els.loadStatus.style.display = 'block';
+                });
+        })();
+    </script>
+</body>
+
+</html>
