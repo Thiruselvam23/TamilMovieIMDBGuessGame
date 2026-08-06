@@ -651,7 +651,7 @@
                             id: m.id,
                             title: m.title,
                             year: m.release_date.slice(0, 4),
-                            rating: m.vote_average,
+                            rating: Math.round(m.vote_average * 10) / 10, // round once here so the displayed number IS the compared number
                             poster: TMDB_IMG_BASE + m.poster_path
                         });
                     });
@@ -784,7 +784,7 @@
 
                 const picked = side === 'left' ? left : right;
                 const other = side === 'left' ? right : left;
-                const correct = picked.rating >= other.rating; // tie counts as correct
+                const correct = picked.rating >= other.rating - 0.001; // tie (or higher) always counts as correct
 
                 els.stampLeft.classList.add('show');
                 els.stampRight.classList.add('show');
@@ -812,14 +812,16 @@
                         }
 
                         if (winStreakCount >= 2) {
-                            // Won twice in a row — retire it, refresh BOTH sides.
+                            // Won twice in a row — retire the winner ONLY. The other side stays as-is.
                             const excludeIds = [left.id, right.id];
-                            const newLeft = nextMovie(excludeIds);
-                            const newRight = nextMovie(excludeIds.concat([newLeft.id]));
-                            left = newLeft;
-                            right = newRight;
-                            paint('left', left, true);
-                            paint('right', right, true);
+                            const freshMovie = nextMovie(excludeIds);
+                            if (side === 'left') {
+                                left = freshMovie;
+                                paint('left', left, true);
+                            } else {
+                                right = freshMovie;
+                                paint('right', right, true);
+                            }
                             winStreakMovieId = null;
                             winStreakCount = 0;
                         } else {
