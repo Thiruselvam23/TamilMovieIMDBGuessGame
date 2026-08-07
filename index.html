@@ -538,7 +538,7 @@
             <div class="card-content">
                 <div class="movie-title" id="titleLeft">—</div>
                 <div class="movie-year" id="yearLeft">—</div>
-                <div class="rating-stamp" id="stampLeft"><span class="num">–.–</span><span class="imdb">TMDb</span>
+                <div class="rating-stamp" id="stampLeft"><span class="num">–.–</span><span class="imdb">Rating</span>
                 </div>
             </div>
             <div class="prompt">Higher rated?</div>
@@ -556,7 +556,7 @@
             <div class="card-content">
                 <div class="movie-title" id="titleRight">—</div>
                 <div class="movie-year" id="yearRight">—</div>
-                <div class="rating-stamp" id="stampRight"><span class="num">–.–</span><span class="imdb">TMDb</span>
+                <div class="rating-stamp" id="stampRight"><span class="num">–.–</span><span class="imdb">Rating</span>
                 </div>
             </div>
             <div class="prompt">Higher rated?</div>
@@ -615,6 +615,42 @@
                 return /^[a-f0-9]{32}$/i.test(TMDB_API_KEY.trim());
             }
 
+            // ---- OMDb config (real IMDb ratings) ----
+            // Get a free key at https://www.omdbapi.com/apikey.aspx (choose FREE, verify via email)
+            // This is the ONLY line you need to edit for this part.
+            const OMDB_API_KEY = '9c72eed7';
+
+            function hasOmdbKey() {
+                const k = OMDB_API_KEY.trim();
+                return k.length >= 6 && k.length <= 12 && /^[a-z0-9]+$/i.test(k);
+            }
+
+            const imdbRatingCache = new Map(); // tmdbId -> real IMDb rating (number) or null if no match
+
+            async function fetchImdbRating(movie) {
+                if (imdbRatingCache.has(movie.id)) return imdbRatingCache.get(movie.id);
+                if (!hasOmdbKey()) { imdbRatingCache.set(movie.id, null); return null; }
+                try {
+                    const t = encodeURIComponent(movie.title);
+                    let res = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&t=${t}&y=${movie.year}&type=movie`);
+                    let data = await res.json();
+                    if (data.Response !== 'True' || !data.imdbRating || data.imdbRating === 'N/A') {
+                        // OMDb sometimes files a movie under a slightly different year — retry without it
+                        res = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&t=${t}&type=movie`);
+                        data = await res.json();
+                    }
+                    const rating = (data.Response === 'True' && data.imdbRating && data.imdbRating !== 'N/A')
+                        ? parseFloat(data.imdbRating)
+                        : null;
+                    imdbRatingCache.set(movie.id, rating);
+                    return rating;
+                } catch (e) {
+                    console.error(`[Kollywood Duel] OMDb lookup failed for "${movie.title}":`, e);
+                    imdbRatingCache.set(movie.id, null);
+                    return null;
+                }
+            }
+
             // Strict Tamil-only pull: filtered server-side by original_language=ta,
             // then double-checked client-side so nothing else can slip through.
             async function fetchTamilMoviePool() {
@@ -651,7 +687,7 @@
                             id: m.id,
                             title: m.title,
                             year: m.release_date.slice(0, 4),
-                            rating: Math.round(m.vote_average * 10) / 10, // round once here so the displayed number IS the compared number
+                            tmdbRating: Math.round(m.vote_average * 10) / 10, // fallback only — real rating comes from OMDb
                             poster: TMDB_IMG_BASE + m.poster_path
                         });
                     });
@@ -726,6 +762,27 @@
                 return m;
             }
 
+            // Draws candidates until one has a real IMDb rating from OMDb.
+            // Falls back to TMDb's own rating only if OMDb is unreachable/unconfigured
+            // or a title genuinely has no IMDb match after several tries.
+            async function pickMovieWithRating(exclude) {
+                const MAX_TRIES = 20;
+                let lastCandidate = null;
+                for (let i = 0; i < MAX_TRIES; i++) {
+                    const candidate = nextMovie(exclude);
+                    lastCandidate = candidate;
+                    if (!hasOmdbKey()) {
+                        return Object.assign({}, candidate, { rating: candidate.tmdbRating, ratingSource: 'tmdb' });
+                    }
+                    const imdbRating = await fetchImdbRating(candidate);
+                    if (imdbRating !== null) {
+                        return Object.assign({}, candidate, { rating: imdbRating, ratingSource: 'imdb' });
+                    }
+                }
+                console.warn('[Kollywood Duel] No OMDb match found after retries — using TMDb rating as a fallback.');
+                return Object.assign({}, lastCandidate, { rating: lastCandidate.tmdbRating, ratingSource: 'tmdb' });
+            }
+
             function paint(side, movie, animate) {
                 const posterEl = side === 'left' ? els.posterLeft : els.posterRight;
                 const titleEl = side === 'left' ? els.titleLeft : els.titleRight;
@@ -739,6 +796,7 @@
                 yearEl.textContent = movie.year;
                 stampEl.classList.remove('show');
                 stampEl.querySelector('.num').textContent = movie.rating.toFixed(1);
+                stampEl.querySelector('.imdb').textContent = movie.ratingSource === 'imdb' ? 'IMDb' : 'TMDb';
 
                 let img = posterEl.querySelector('.poster-img');
                 if (!img) {
@@ -761,11 +819,11 @@
                 els.cardRight.classList.remove('winner', 'loser', 'locked');
             }
 
-            function startRound() {
+            async function startRound() {
                 resetCardState();
                 pool = shuffledPool();
-                left = nextMovie([]);
-                right = nextMovie([left.id]);
+                left = await pickMovieWithRating([]);
+                right = await pickMovieWithRating([left.id]);
                 paint('left', left, false);
                 paint('right', right, false);
                 locked = false;
@@ -802,7 +860,7 @@
                     winnerCard.classList.add('winner');
                     loserCard.classList.add('loser');
 
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         // Track how many rounds in a row this same movie has won.
                         if (winStreakMovieId === picked.id) {
                             winStreakCount++;
@@ -814,7 +872,7 @@
                         if (winStreakCount >= 2) {
                             // Won twice in a row — retire the winner ONLY. The other side stays as-is.
                             const excludeIds = [left.id, right.id];
-                            const freshMovie = nextMovie(excludeIds);
+                            const freshMovie = await pickMovieWithRating(excludeIds);
                             if (side === 'left') {
                                 left = freshMovie;
                                 paint('left', left, true);
@@ -826,7 +884,7 @@
                             winStreakCount = 0;
                         } else {
                             // First win for this movie — keep it on screen, swap only the loser.
-                            const freshMovie = nextMovie([left.id, right.id]);
+                            const freshMovie = await pickMovieWithRating([left.id, right.id]);
                             if (side === 'left') {
                                 right = freshMovie;
                                 paint('right', right, true);
@@ -879,14 +937,14 @@
 
             // Load the live Tamil movie pool, then unlock the Start button.
             fetchTamilMoviePool()
-                .then(list => {
+                .then(async list => {
                     if (list.length < 10) {
                         throw new Error('TOO_FEW_RESULTS');
                     }
                     MOVIES = list;
                     pool = shuffledPool();
-                    left = nextMovie([]);
-                    right = nextMovie([left.id]);
+                    left = await pickMovieWithRating([]);
+                    right = await pickMovieWithRating([left.id]);
                     paint('left', left, false);
                     paint('right', right, false);
                     enableStart();
